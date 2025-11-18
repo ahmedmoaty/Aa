@@ -219,7 +219,7 @@
   </main>
 
   <script>
-    // Sessions and records data model:
+    // Sessions and records:
     // sessions: [{ id, subject, date, sessionTime }]
     // recordsBySession: { [id]: [{ code, time }] }
 
@@ -250,6 +250,10 @@
     let scanning = false;
     let currentDeviceId = null;
 
+    // Debounce: avoid repeated reading of same barcode every frame
+    let lastScannedCode = null;
+    let lastScannedAt = 0; // timestamp in ms
+
     // ---------- Utilities ----------
     function todayISODate() {
       const d = new Date();
@@ -260,7 +264,6 @@
     }
 
     function makeSessionId(subject, date, sessionTime) {
-      // Simple stable key
       return `${subject}||${date}||${sessionTime}`;
     }
 
@@ -278,7 +281,6 @@
       }
 
       if (sessions.length > 0 && !currentSessionId) {
-        // default to last created session
         currentSessionId = sessions[sessions.length - 1].id;
       }
     }
@@ -414,7 +416,7 @@
 
       if (exists) {
         showDuplicateScan(code);
-        alert('This student is already scanned for this session.');
+        // No alert here, just show red pill
         return;
       }
 
@@ -495,7 +497,7 @@
       lastScanPill.style.display = 'inline-block';
     }
 
-    // ---------- Scanner ----------
+    // ---------- Scanner with debounce ----------
     async function startScan() {
       if (scanning) return;
 
@@ -521,10 +523,21 @@
         await codeReader.decodeFromVideoDevice(currentDeviceId, video, (result, err) => {
           if (result) {
             const text = result.getText();
-            if (text) {
+            const now = Date.now();
+
+            if (
+              text &&
+              (
+                text !== lastScannedCode ||
+                now - lastScannedAt > 1500  // 1.5 seconds
+              )
+            ) {
+              lastScannedCode = text;
+              lastScannedAt = now;
               addRecordToCurrentSession(text);
             }
           }
+          // Ignore errors while decoding frames
         });
       } catch (e) {
         console.error(e);
