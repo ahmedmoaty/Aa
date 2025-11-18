@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Student Barcode Scanner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#1976d2" />
+
+  <!-- PWA manifest -->
+  <link rel="manifest" href="manifest.json" />
+
+  <!-- Basic styles -->
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f5f5f5;
+    }
+    header {
+      background: #1976d2;
+      color: white;
+      padding: 12px 16px;
+      text-align: center;
+      font-size: 18px;
+    }
+    main {
+      padding: 12px 16px 40px;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+    button {
+      padding: 10px 14px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      margin: 4px 4px 8px 0;
+      cursor: pointer;
+    }
+    button.primary {
+      background: #1976d2;
+      color: white;
+    }
+    button.secondary {
+      background: #e0e0e0;
+    }
+    button.danger {
+      background: #d32f2f;
+      color: white;
+    }
+    video {
+      width: 100%;
+      max-height: 320px;
+      background: black;
+      border-radius: 10px;
+      margin-top: 8px;
+    }
+    .section-title {
+      margin-top: 16px;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+    ul {
+      list-style: none;
+      padding-left: 0;
+      margin-top: 0;
+    }
+    li {
+      background: white;
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin: 4px 0;
+      font-size: 14px;
+      word-wrap: break-word;
+    }
+    .code {
+      font-weight: 600;
+    }
+    .time {
+      font-size: 12px;
+      color: #777;
+    }
+    .hint {
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+    }
+    .empty {
+      font-size: 13px;
+      color: #999;
+      margin-top: 6px;
+    }
+    .pill {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #e3f2fd;
+      color: #0d47a1;
+      font-size: 12px;
+      margin-top: 6px;
+    }
+    .pill.duplicate {
+      background: #ffebee;
+      color: #b71c1c;
+    }
+    .card {
+      background: white;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .field-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .field {
+      flex: 1 1 140px;
+      min-width: 140px;
+    }
+    .field label {
+      display: block;
+      font-size: 12px;
+      color: #555;
+      margin-bottom: 2px;
+    }
+    .field input, .field select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+      background: white;
+    }
+    .small-note {
+      font-size: 11px;
+      color: #777;
+      margin-top: 4px;
+    }
+    #currentSessionLabel {
+      font-size: 12px;
+      color: #444;
+      margin-top: 6px;
+    }
+  </style>
+
+  <!-- ZXing library from CDN -->
+  <script src="https://unpkg.com/@zxing/library@latest"></script>
+</head>
+<body>
+  <header>
+    Student Barcode Scanner
+  </header>
+
+  <main>
+    <!-- Session info card -->
+    <div class="card">
+      <div class="section-title">Session details</div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="sessionSelect">Open existing session</label>
+          <select id="sessionSelect">
+            <option value="">-- No session selected --</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="subjectInput">Subject</label>
+          <input id="subjectInput" type="text" placeholder="e.g. Math, English" />
+        </div>
+        <div class="field">
+          <label for="dateInput">Date</label>
+          <input id="dateInput" type="date" />
+        </div>
+        <div class="field">
+          <label for="sessionInput">Session / Time</label>
+          <input id="sessionInput" type="text" placeholder="e.g. Morning, Period 1" />
+        </div>
+      </div>
+
+      <button id="saveSessionBtn" class="secondary">
+        Create / Update session &amp; select
+      </button>
+
+      <p id="currentSessionLabel"></p>
+      <div class="small-note">
+        1) To start a new session: fill Subject / Date / Session, click "Create / Update".<br>
+        2) To open an old session: choose it from "Open existing session".
+      </div>
+    </div>
+
+    <!-- Scanner controls -->
+    <div>
+      <button id="startBtn" class="primary">Start scanning</button>
+      <button id="stopBtn" class="secondary">Stop</button>
+    </div>
+
+    <video id="video" muted playsinline></video>
+    <p class="hint">
+      If the camera doesn’t start, make sure the browser has camera permission enabled.
+    </p>
+
+    <div class="pill" id="lastScanPill" style="display:none;"></div>
+
+    <div class="section-title">Saved scans (current session)</div>
+    <div>
+      <button id="downloadCsvBtn" class="secondary">Download CSV (this session)</button>
+      <button id="clearBtn" class="danger">Clear all sessions</button>
+    </div>
+
+    <ul id="list"></ul>
+    <p id="emptyMsg" class="empty" style="display:none;">No scans for this session yet.</p>
+  </main>
+
+  <script>
+    // Sessions and records data model:
+    // sessions: [{ id, subject, date, sessionTime }]
+    // recordsBySession: { [id]: [{ code, time }] }
+
+    const SESSIONS_KEY = 'scanner_sessions_v1';
+    const RECORDS_KEY  = 'scanner_records_v1';
+
+    const codeReader = new ZXing.BrowserMultiFormatReader();
+
+    const video = document.getElementById('video');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const downloadCsvBtn = document.getElementById('downloadCsvBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const lastScanPill = document.getElementById('lastScanPill');
+    const list = document.getElementById('list');
+    const emptyMsg = document.getElementById('emptyMsg');
+
+    const subjectInput = document.getElementById('subjectInput');
+    const dateInput = document.getElementById('dateInput');
+    const sessionInput = document.getElementById('sessionInput');
+    const saveSessionBtn = document.getElementById('saveSessionBtn');
+    const sessionSelect = document.getElementById('sessionSelect');
+    const currentSessionLabel = document.getElementById('currentSessionLabel');
+
+    let sessions = [];
+    let recordsBySession = {};
+    let currentSessionId = null;
+    let scanning = false;
+    let currentDeviceId = null;
+
+    // ---------- Utilities ----------
+    function todayISODate() {
+      const d = new Date();
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function makeSessionId(subject, date, sessionTime) {
+      // Simple stable key
+      return `${subject}||${date}||${sessionTime}`;
+    }
+
+    // ---------- Load & save ----------
+    function loadAll() {
+      try {
+        sessions = JSON.parse(localStorage.getItem(SESSIONS_KEY) || '[]');
+      } catch {
+        sessions = [];
+      }
+      try {
+        recordsBySession = JSON.parse(localStorage.getItem(RECORDS_KEY) || '{}');
+      } catch {
+        recordsBySession = {};
+      }
+
+      if (sessions.length > 0 && !currentSessionId) {
+        // default to last created session
+        currentSessionId = sessions[sessions.length - 1].id;
+      }
+    }
+
+    function saveSessions() {
+      localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+    }
+
+    function saveRecords() {
+      localStorage.setItem(RECORDS_KEY, JSON.stringify(recordsBySession));
+    }
+
+    // ---------- Session helpers ----------
+    function getSessionById(id) {
+      return sessions.find(s => s.id === id) || null;
+    }
+
+    function getCurrentSessionMeta() {
+      if (!currentSessionId) return null;
+      return getSessionById(currentSessionId);
+    }
+
+    function getCurrentRecords() {
+      if (!currentSessionId) return [];
+      return recordsBySession[currentSessionId] || [];
+    }
+
+    function ensureRecordsArrayForSession(id) {
+      if (!recordsBySession[id]) {
+        recordsBySession[id] = [];
+      }
+    }
+
+    function refreshSessionSelect() {
+      sessionSelect.innerHTML = '';
+
+      const optNone = document.createElement('option');
+      optNone.value = '';
+      optNone.textContent = '-- No session selected --';
+      sessionSelect.appendChild(optNone);
+
+      sessions.forEach(session => {
+        const opt = document.createElement('option');
+        opt.value = session.id;
+        const label = `${session.date || 'No date'} - ${session.subject || 'No subject'} (${session.sessionTime || 'Session'})`;
+        opt.textContent = label;
+        if (session.id === currentSessionId) {
+          opt.selected = true;
+        }
+        sessionSelect.appendChild(opt);
+      });
+    }
+
+    function updateSessionInputsFromCurrent() {
+      const session = getCurrentSessionMeta();
+      if (!session) {
+        if (!dateInput.value) dateInput.value = todayISODate();
+        subjectInput.value = subjectInput.value || '';
+        sessionInput.value = sessionInput.value || '';
+        return;
+      }
+      subjectInput.value = session.subject || '';
+      dateInput.value = session.date || todayISODate();
+      sessionInput.value = session.sessionTime || '';
+    }
+
+    function updateCurrentSessionLabel() {
+      const session = getCurrentSessionMeta();
+      if (!session) {
+        currentSessionLabel.textContent = 'Current session: none selected.';
+      } else {
+        currentSessionLabel.textContent =
+          `Current session: ${session.date || '-'} – ${session.subject || '-'} (${session.sessionTime || 'Session'})`;
+      }
+    }
+
+    function createOrUpdateSession() {
+      const subject = subjectInput.value.trim();
+      let date = dateInput.value;
+      const sessionTime = sessionInput.value.trim();
+
+      if (!subject) {
+        alert('Please enter a subject.');
+        return;
+      }
+      if (!date) {
+        date = todayISODate();
+        dateInput.value = date;
+      }
+
+      const id = makeSessionId(subject, date, sessionTime);
+      let session = getSessionById(id);
+
+      if (!session) {
+        session = { id, subject, date, sessionTime };
+        sessions.push(session);
+      } else {
+        session.subject = subject;
+        session.date = date;
+        session.sessionTime = sessionTime;
+      }
+
+      currentSessionId = id;
+      ensureRecordsArrayForSession(id);
+      saveSessions();
+      saveRecords();
+      refreshSessionSelect();
+      updateCurrentSessionLabel();
+      renderList();
+      alert('Session selected and saved.');
+    }
+
+    function handleSessionSelectChange() {
+      const id = sessionSelect.value || null;
+      currentSessionId = id;
+      updateSessionInputsFromCurrent();
+      updateCurrentSessionLabel();
+      renderList();
+      lastScanPill.style.display = 'none';
+    }
+
+    // ---------- Records ----------
+    function addRecordToCurrentSession(code) {
+      const session = getCurrentSessionMeta();
+      if (!session) {
+        alert('Please create or select a session first.');
+        return;
+      }
+
+      ensureRecordsArrayForSession(session.id);
+      const records = getCurrentRecords();
+      const exists = records.some(r => r.code === code);
+
+      if (exists) {
+        showDuplicateScan(code);
+        alert('This student is already scanned for this session.');
+        return;
+      }
+
+      const now = new Date();
+      records.push({
+        code: String(code),
+        time: now.toISOString()
+      });
+      recordsBySession[session.id] = records;
+      saveRecords();
+      renderList();
+      showLastScan(code);
+    }
+
+    function clearAllSessionsAndRecords() {
+      if (!confirm('This will delete ALL sessions and scans on this device. Continue?')) {
+        return;
+      }
+      sessions = [];
+      recordsBySession = {};
+      currentSessionId = null;
+      saveSessions();
+      saveRecords();
+      refreshSessionSelect();
+      updateCurrentSessionLabel();
+      renderList();
+      lastScanPill.style.display = 'none';
+    }
+
+    function renderList() {
+      list.innerHTML = '';
+
+      const session = getCurrentSessionMeta();
+      if (!session) {
+        emptyMsg.textContent = 'No session selected.';
+        emptyMsg.style.display = 'block';
+        return;
+      }
+
+      const records = getCurrentRecords().slice().sort((a, b) =>
+        a.code.localeCompare(b.code)
+      );
+
+      if (records.length === 0) {
+        emptyMsg.textContent = 'No scans for this session yet.';
+        emptyMsg.style.display = 'block';
+        return;
+      } else {
+        emptyMsg.style.display = 'none';
+      }
+
+      records.forEach((r, index) => {
+        const li = document.createElement('li');
+
+        const codeDiv = document.createElement('div');
+        codeDiv.className = 'code';
+        codeDiv.textContent = `${index + 1}. ${r.code}`;
+
+        const timeDiv = document.createElement('div');
+        timeDiv.className = 'time';
+        timeDiv.textContent = r.time;
+
+        li.appendChild(codeDiv);
+        li.appendChild(timeDiv);
+        list.appendChild(li);
+      });
+    }
+
+    function showLastScan(code) {
+      lastScanPill.classList.remove('duplicate');
+      lastScanPill.textContent = 'Last scan: ' + code;
+      lastScanPill.style.display = 'inline-block';
+    }
+
+    function showDuplicateScan(code) {
+      lastScanPill.classList.add('duplicate');
+      lastScanPill.textContent = 'Already scanned this session: ' + code;
+      lastScanPill.style.display = 'inline-block';
+    }
+
+    // ---------- Scanner ----------
+    async function startScan() {
+      if (scanning) return;
+
+      const session = getCurrentSessionMeta();
+      if (!session) {
+        alert('Please create or select a session first.');
+        return;
+      }
+
+      scanning = true;
+
+      try {
+        const devices = await codeReader.listVideoInputDevices();
+        if (!devices || devices.length === 0) {
+          alert('No camera found');
+          scanning = false;
+          return;
+        }
+
+        // Prefer back camera
+        currentDeviceId = devices[devices.length - 1].deviceId;
+
+        await codeReader.decodeFromVideoDevice(currentDeviceId, video, (result, err) => {
+          if (result) {
+            const text = result.getText();
+            if (text) {
+              addRecordToCurrentSession(text);
+            }
+          }
+        });
+      } catch (e) {
+        console.error(e);
+        alert('Error starting camera: ' + e);
+        scanning = false;
+      }
+    }
+
+    function stopScan() {
+      try {
+        codeReader.reset();
+      } catch (e) {
+        console.error('Error stopping scanner', e);
+      }
+      scanning = false;
+    }
+
+    // ---------- CSV export (current session only) ----------
+    function downloadCSV() {
+      const session = getCurrentSessionMeta();
+      if (!session) {
+        alert('Please select a session first.');
+        return;
+      }
+
+      const records = getCurrentRecords();
+      if (records.length === 0) {
+        alert('No records to export for this session.');
+        return;
+      }
+
+      let csv = 'Code,Time,Subject,Date,Session\n';
+
+      records.forEach(r => {
+        const code = String(r.code).replace(/"/g, '""');
+        const time = String(r.time).replace(/"/g, '""');
+        const subject = String(session.subject || '').replace(/"/g, '""');
+        const date = String(session.date || '').replace(/"/g, '""');
+        const sessionTime = String(session.sessionTime || '').replace(/"/g, '""');
+
+        csv += `"${code}","${time}","${subject}","${date}","${sessionTime}"\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'students_' + (session.date || 'session') + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // ---------- Event wiring ----------
+    startBtn.addEventListener('click', startScan);
+    stopBtn.addEventListener('click', stopScan);
+    downloadCsvBtn.addEventListener('click', downloadCSV);
+    clearBtn.addEventListener('click', clearAllSessionsAndRecords);
+    saveSessionBtn.addEventListener('click', createOrUpdateSession);
+    sessionSelect.addEventListener('change', handleSessionSelectChange);
+
+    // ---------- Init ----------
+    function init() {
+      loadAll();
+      if (!dateInput.value) dateInput.value = todayISODate();
+      refreshSessionSelect();
+      updateSessionInputsFromCurrent();
+      updateCurrentSessionLabel();
+      renderList();
+    }
+
+    init();
+
+    // ---------- Service worker ----------
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('service-worker.js')
+          .catch(err => console.error('SW registration failed:', err));
+      });
+    }
+  </script>
+</body>
+</html>
